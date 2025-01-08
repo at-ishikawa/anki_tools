@@ -21,10 +21,11 @@ type License struct {
 }
 
 type Phonetics struct {
-	Text    string  `json:"text"`
-	Audio   string  `json:"audio,omitempty"`
-	Source  string  `json:"source,omitempty"`
-	License License `json:"license,omitempty"`
+	Text      string  `json:"text"`
+	Audio     string  `json:"audio,omitempty"`
+	Source    string  `json:"source,omitempty"`
+	SourceURL string  `json:"sourceUrl,omitempty"`
+	License   License `json:"license,omitempty"`
 }
 
 type Word struct {
