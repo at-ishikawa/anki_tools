@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/at-ishikawa/anki_tools/internal/free_dictionary_api"
 	"github.com/at-ishikawa/anki_tools/internal/rapidapi"
@@ -92,11 +93,30 @@ type Env struct {
 }
 
 func main() {
-	word := os.Args[1]
-	if err := runMain(word); err != nil {
-		slog.Error("failed to run main",
-			"word", word,
-			"error", err,
-		)
+	command := os.Args[1]
+	if command == "generate" {
+		word := os.Args[2]
+		if err := runMain(word); err != nil {
+			slog.Error("failed to run main",
+				"word", word,
+				"error", err,
+			)
+		}
+		os.Exit(0)
 	}
+
+	r := rapidapi.NewReader()
+	res, err := r.Read(filepath.Join("dictionaries", "rapidapi"))
+	if err != nil {
+		slog.Error("failed to read rapidapi", "error", err)
+	}
+	sideSeparator := strings.Repeat("-", 50) + "\n"
+	cardSeparator := strings.Repeat("=", 50) + "\n\n"
+	fmt.Printf("Side separator: %s\n", sideSeparator)
+	fmt.Printf("Card separator: %s\n", cardSeparator)
+	for _, word := range res {
+		fmt.Println(word.ToFlashCard(sideSeparator))
+		fmt.Println(cardSeparator)
+	}
+	os.Exit(0)
 }
