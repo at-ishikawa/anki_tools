@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/at-ishikawa/anki_tools/internal/rapidapi"
 	"github.com/go-resty/resty/v2"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/spf13/cobra"
 )
 
 func storeWord(word string, rootDir string, f func() (*resty.Response, error)) error {
@@ -24,6 +26,10 @@ func storeWord(word string, rootDir string, f func() (*resty.Response, error)) e
 	if err != nil {
 		return fmt.Errorf("f > %w", err)
 	}
+	if res.StatusCode() != http.StatusOK {
+		return fmt.Errorf("f > status code: %d, body: %s", res.StatusCode(), string(res.Body()))
+	}
+
 	file, err := os.Create(localFilePath)
 	if err != nil {
 		return fmt.Errorf("os.Create > %w", err)
@@ -93,30 +99,49 @@ type Env struct {
 }
 
 func main() {
-	command := os.Args[1]
-	if command == "generate" {
-		word := os.Args[2]
-		if err := runMain(word); err != nil {
-			slog.Error("failed to run main",
-				"word", word,
-				"error", err,
-			)
-		}
-		os.Exit(0)
-	}
+	rootCommand := cobra.Command{}
+	rootCommand.AddCommand(&cobra.Command{
+		Use:  "generate",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			word := args[0]
+			if err := runMain(word); err != nil {
+				slog.Error("failed to run main",
+					"word", word,
+					"error", err,
+				)
+			}
+			return nil
+		},
+	})
+	rootCommand.AddCommand(&cobra.Command{
+		Use: "dump",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r := rapidapi.NewReader()
+			res, err := r.Read(filepath.Join("dictionaries", "rapidapi"))
+			if err != nil {
+				slog.Error("failed to read rapidapi", "error", err)
+			}
 
-	r := rapidapi.NewReader()
-	res, err := r.Read(filepath.Join("dictionaries", "rapidapi"))
-	if err != nil {
-		slog.Error("failed to read rapidapi", "error", err)
-	}
-	sideSeparator := strings.Repeat("-", 50) + "\n"
-	cardSeparator := strings.Repeat("=", 50) + "\n\n"
-	fmt.Printf("Side separator: %s\n", sideSeparator)
-	fmt.Printf("Card separator: %s\n", cardSeparator)
-	for _, word := range res {
-		fmt.Println(word.ToFlashCard(sideSeparator))
-		fmt.Println(cardSeparator)
+			sideSeparator := strings.Repeat("-", 50) + "\n"
+			cardSeparator := strings.Repeat("=", 50) + "\n\n"
+			fmt.Printf("Side separator: %s\n", sideSeparator)
+			fmt.Printf("Card separator: %s\n", cardSeparator)
+			for _, word := range res {
+				fmt.Println(word.ToFlashCard(sideSeparator))
+
+				// add a youglish link
+				url := fmt.Sprintf("https://youglish.com/pronounce/%s", word.Word)
+				fmt.Printf("%s\nYouglish: %s\n", strings.Repeat("-", 50), url)
+				fmt.Println(cardSeparator)
+			}
+			return nil
+		},
+	})
+
+	if err := rootCommand.Execute(); err != nil {
+		slog.Error("failed to execute root command", "error", err)
+		os.Exit(1)
 	}
 	os.Exit(0)
 }

@@ -34,28 +34,29 @@ type Result struct {
 }
 
 func (r Response) ToFlashCard(sideSeparator string) string {
-	builder := strings.Builder{}
-	builder.WriteString(fmt.Sprintf("Word: %s\n", r.Word))
-	builder.WriteString(sideSeparator)
-	builder.WriteString(fmt.Sprintf("Pronunciation: %s\n", r.Pronunciation.All))
-
+	meanings := make([]string, 0, len(r.Results))
 	for _, result := range r.Results {
-		builder.WriteString(fmt.Sprintf("Definition: %s\n", result.Definition))
-		builder.WriteString(fmt.Sprintf("Part of Speech: %s\n", result.PartOfSpeech))
+		lines := make([]string, 0)
+		lines = append(lines, fmt.Sprintf("[%s]: %s", result.PartOfSpeech, result.Definition))
 		if len(result.Examples) > 0 {
-			builder.WriteString(fmt.Sprintf("Examples: %s\n", strings.Join(result.Examples, ", ")))
+			lines = append(lines, fmt.Sprintf("Examples: %s", strings.Join(result.Examples, ", ")))
 		}
 		if len(result.Synonyms) > 0 {
-			builder.WriteString(fmt.Sprintf("Synonyms: %s\n", strings.Join(result.Synonyms, ", ")))
+			lines = append(lines, fmt.Sprintf("Synonyms: %s", strings.Join(result.Synonyms, ", ")))
 		}
 		if len(result.SimilarTo) > 0 {
-			builder.WriteString(fmt.Sprintf("Similar to: %s\n", strings.Join(result.SimilarTo, ", ")))
+			lines = append(lines, fmt.Sprintf("Similar to: %s", strings.Join(result.SimilarTo, ", ")))
 		}
 		if len(result.Derivation) > 0 {
-			builder.WriteString(fmt.Sprintf("Derivation: %s\n", strings.Join(result.Derivation, ", ")))
+			lines = append(lines, fmt.Sprintf("Derivation: %s", strings.Join(result.Derivation, ", ")))
 		}
-		builder.WriteString(strings.Repeat("-", 50) + "\n")
+		meanings = append(meanings, strings.Join(lines, "\n"))
 	}
+
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("Word: %s /%s/\n", r.Word, r.Pronunciation.All))
+	builder.WriteString(sideSeparator)
+	builder.WriteString(strings.Join(meanings, "\n"+strings.Repeat("-", 50)+"\n"))
 
 	return builder.String()
 }

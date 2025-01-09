@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 type Reader struct {
@@ -15,13 +16,26 @@ func NewReader() *Reader {
 	return &Reader{}
 }
 
-func (r *Reader) Read(dir string) (map[string]Response, error) {
+func (r *Reader) Read(dir string) ([]Response, error) {
 	lookedUpWords, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("os.ReadDir > %w", err)
 	}
 
-	dictionaries := make(map[string]Response)
+	sort.Slice(lookedUpWords, func(i, j int) bool {
+		// sort by file's timestamp in descending order
+
+		iStat, err := os.Stat(filepath.Join(dir, lookedUpWords[i].Name()))
+		if err != nil {
+			return false
+		}
+		jStat, err := os.Stat(filepath.Join(dir, lookedUpWords[j].Name()))
+		if err != nil {
+			return false
+		}
+		return iStat.ModTime().After(jStat.ModTime())
+	})
+	dictionaries := make([]Response, 0, len(lookedUpWords))
 	for _, word := range lookedUpWords {
 		if word.Name() == ".gitignore" {
 			continue
@@ -43,7 +57,7 @@ func (r *Reader) Read(dir string) (map[string]Response, error) {
 		if err := json.Unmarshal(contents, &res); err != nil {
 			return nil, fmt.Errorf("word: %s. json.Unmarshal > %w", word, err)
 		}
-		dictionaries[res.Word] = res
+		dictionaries = append(dictionaries, res)
 	}
 	return dictionaries, nil
 }
