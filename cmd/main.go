@@ -13,6 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func storeWord(word string, rootDir string, f func() (*resty.Response, error)) error {
@@ -43,7 +44,7 @@ func storeWord(word string, rootDir string, f func() (*resty.Response, error)) e
 	return nil
 }
 
-func runMain(word string) error {
+func runMain(api API, word string) error {
 	var config Env
 	envconfig.MustProcess("", &config)
 
@@ -52,42 +53,44 @@ func runMain(word string) error {
 		return fmt.Errorf("filepath.Abs > %w", err)
 	}
 
-	if err := storeWord(word, filepath.Join(dir, "rapidapi"), func() (*resty.Response, error) {
-		var response rapidapi.Response
-		client := resty.New()
-		res, err := client.R().
-			EnableTrace().
-			SetHeader("x-rapidapi-host", config.RapidAPIHost).
-			SetHeader("x-rapidapi-key", config.RapidAPIKey).
-			SetResult(&response).
-			Get(
-				fmt.Sprintf("https://%s/words/%s", config.RapidAPIHost, word),
-			)
-		if err != nil {
-			return nil, fmt.Errorf("client.R.Get > %w", err)
+	if api == APIFreeDictionaryAPI {
+		if err := storeWord(word, filepath.Join(dir, "free_dictionary_api"), func() (*resty.Response, error) {
+			var response free_dictionary_api.Response
+			client := resty.New()
+			res, err := client.R().
+				EnableTrace().
+				SetResult(&response).
+				Get(
+					fmt.Sprintf("https://api.dictionaryapi.dev/api/v2/entries/en/%s", word),
+				)
+			if err != nil {
+				return nil, fmt.Errorf("client.R.Get > %w", err)
+			}
+
+			return res, nil
+		}); err != nil {
+			return fmt.Errorf("storeWord for Free Dictionary API > %w", err)
 		}
+	} else if api == APIWordsAPIInRapidAPI {
+		if err := storeWord(word, filepath.Join(dir, "rapidapi"), func() (*resty.Response, error) {
+			var response rapidapi.Response
+			client := resty.New()
+			res, err := client.R().
+				EnableTrace().
+				SetHeader("x-rapidapi-host", config.RapidAPIHost).
+				SetHeader("x-rapidapi-key", config.RapidAPIKey).
+				SetResult(&response).
+				Get(
+					fmt.Sprintf("https://%s/words/%s", config.RapidAPIHost, word),
+				)
+			if err != nil {
+				return nil, fmt.Errorf("client.R.Get > %w", err)
+			}
 
-		return res, nil
-	}); err != nil {
-		return fmt.Errorf("storeWord for RapidAPI > %w", err)
-	}
-
-	if err := storeWord(word, filepath.Join(dir, "free_dictionary_api"), func() (*resty.Response, error) {
-		var response free_dictionary_api.Response
-		client := resty.New()
-		res, err := client.R().
-			EnableTrace().
-			SetResult(&response).
-			Get(
-				fmt.Sprintf("https://api.dictionaryapi.dev/api/v2/entries/en/%s", word),
-			)
-		if err != nil {
-			return nil, fmt.Errorf("client.R.Get > %w", err)
+			return res, nil
+		}); err != nil {
+			return fmt.Errorf("storeWord for RapidAPI > %w", err)
 		}
-
-		return res, nil
-	}); err != nil {
-		return fmt.Errorf("storeWord for Free Dictionary API > %w", err)
 	}
 
 	return nil
@@ -98,14 +101,49 @@ type Env struct {
 	RapidAPIKey  string `envconfig:"RAPID_API_KEY"`
 }
 
+type API string
+
+func (a *API) Set(val string) error {
+	for _, api := range allAPIs {
+		if val == string(api) {
+			*a = api
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid API: %s", val)
+}
+
+func (a API) String() string {
+	return string(a)
+}
+
+func (a *API) Type() string {
+	return "API"
+}
+
+const (
+	APIFreeDictionaryAPI  API = "free_dictionary"
+	APIWordsAPIInRapidAPI API = "words_api"
+)
+
+var (
+	_       pflag.Value = (*API)(nil)
+	allAPIs             = []API{APIFreeDictionaryAPI, APIWordsAPIInRapidAPI}
+)
+
 func main() {
 	rootCommand := cobra.Command{}
+	flags := rootCommand.PersistentFlags()
+
+	api := APIFreeDictionaryAPI
+	flags.Var(&api, "api", fmt.Sprintf("API to use. Possible values are %v", allAPIs))
+
 	rootCommand.AddCommand(&cobra.Command{
 		Use:  "generate",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			word := args[0]
-			if err := runMain(word); err != nil {
+			if err := runMain(api, word); err != nil {
 				slog.Error("failed to run main",
 					"word", word,
 					"error", err,
@@ -117,6 +155,10 @@ func main() {
 	rootCommand.AddCommand(&cobra.Command{
 		Use: "dump",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if api != APIWordsAPIInRapidAPI {
+				return fmt.Errorf("dump is only available for API: %s", APIWordsAPIInRapidAPI)
+			}
+
 			r := rapidapi.NewReader()
 			res, err := r.Read(filepath.Join("dictionaries", "rapidapi"))
 			if err != nil {
